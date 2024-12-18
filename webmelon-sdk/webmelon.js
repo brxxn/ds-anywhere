@@ -100,6 +100,39 @@
     vfsInitialized: []
   };
 
+  // This class is used as the initial "offline" multiplayer inteface that just returns nothing
+  class OfflineMPInterface {
+    constructor() {}
+    initialize() {
+      console.log('Offline MP initialize called');
+    }
+    end() {
+      console.log('Offline MP end called');
+    }
+    sendPacket(data, timestamp) {
+      console.debug([data, timestamp]);
+    }
+    recvPacket() {
+      return undefined;
+    }
+    sendCmd(data, timestamp) {
+      console.debug([data, timestamp]);
+    }
+    sendReply(data, timestamp, aid) {
+      console.debug([data, timestamp, aid]);
+    }
+    sendAck(data, timestamp) {
+      console.debug([data, timestamp]);
+    }
+    recvHostPacket() {
+      return undefined;
+    }
+    recvReplies() {
+      return [];
+    }
+  };
+  const defaultMpInterface = new OfflineMPInterface();
+
   let WebMelon = {
     // Things in here should only be used by the SDK itself. This does not need to (and should not be)
     // included in TypeScript bindings. The reason we do not keep it as a local variable here in the
@@ -194,6 +227,7 @@
         gamepadBinds: DefaultGamepadBindings,
         gamepadRumbleIntensity: 0.5
       },
+      mpInterface: defaultMpInterface,
       subscribers: DefaultSubscribers,
       storage: {
         initialized: false,
@@ -708,6 +742,35 @@
             strongMagnitude: WebMelon._internal.inputSettings.gamepadRumbleIntensity
           });
         }
+      }
+    },
+    multiplayer: {
+      _sendPacket: (dataPtr, length, timestamp) => {
+        const data = new Uint8Array(Module.HEAPU8.buffer, dataPtr, length);
+        WebMelon._internal.mpInterface.sendPacket(data, timestamp);
+      },
+      _sendCmd: (dataPtr, length, timestamp) => {
+        const data = new Uint8Array(Module.HEAPU8.buffer, dataPtr, length);
+        WebMelon._internal.mpInterface.sendCmd(data, timestamp);
+      },
+      _sendReply: (dataPtr, length, timestamp, aid) => {
+        const data = new Uint8Array(Module.HEAPU8.buffer, dataPtr, length);
+        WebMelon._internal.mpInterface.sendReply(data, timestamp, aid);
+      },
+      _sendAck: (dataPtr, length, timestamp) => {
+        const data = new Uint8Array(Module.HEAPU8.buffer, dataPtr, length);
+        WebMelon._internal.mpInterface.sendAck(data, timestamp);
+      },
+      _recvPacket: (dataPtr, timestampPtr) => {
+        const receivedPacket = WebMelon._internal.mpInterface.recvPacket();
+        if (!receivedPacket) return;
+
+      },
+      setInterface: (mpInterface) => {
+        WebMelon._internal.mpInterface = mpInterface;
+      },
+      removeInterface: () => {
+        WebMelon.multiplayer.setInterface(defaultMpInterface);
       }
     }
   };

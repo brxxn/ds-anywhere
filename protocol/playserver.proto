@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+enum ClientMessageType {
+  PING = 0;
+  CONNECT = 1;
+  SEND = 2;
+  BULKSEND = 3;
+}
+
+enum ServerMessageType {
+  PONG = 0;
+  CONNACK = 1;
+  RECV = 2;
+  BULKRECV = 3;
+}
+
+enum DsPacketType {
+  GENERIC = 0;
+  CMD = 1;
+  REPLY = 2;
+  ACK = 3;
+}
+
+enum ConnAckFailureReason {
+  SERVER_FULL = 0;
+  INCORRECT_PASSWORD = 1;
+  CLIENT_VERSION_INVALID = 2;
+  SERVER_VERSION_INVALID = 3;
+  INVALID_NAME = 4;
+  ALREADY_CONNECTED = 5;
+  REMOTE_ERROR = 6;
+}
+
+message DsPacket {
+  DsPacketType packet_type = 1;
+  bytes data = 2;
+  uint64 timestamp = 3;
+  optional uint32 aid = 4;
+}
+
+message ConnectPacket {
+  uint32 client_version = 1;
+  string name = 2;
+  optional string password = 3;
+}
+
+message ConnAckPacket {
+  bool success = 1;
+  optional ConnAckFailureReason fail_reason = 2;
+  optional string remote_error = 3;
+}
+
+message BulkPackets {
+  repeated DsPacket packets = 1;
+}
+
+message ClientMessage {
+  ClientMessageType msg_type = 1;
+  oneof msg_content {
+    ConnectPacket connect_packet = 2;
+    DsPacket ds_packet = 3;
+    BulkPackets bulk_packets = 4;
+  }
+}
+
+message ServerMessage {
+  ServerMessageType msg_type = 1;
+  oneof msg_content {
+    ConnAckPacket connack_packet = 2;
+    DsPacket ds_packet = 3;
+    BulkPackets bulk_packets = 4;
+  }
+}

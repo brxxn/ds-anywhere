@@ -21,6 +21,29 @@ interface WebMelonConstants {
   FIRMWARE_LANGUAGES: WebMelonFirmwareLanguage[];
 };
 
+interface WebMelonRecvPacketResponse {
+  data: UInt8Array;
+  timestamp: number;
+};
+
+interface WebMelonRecvReplyPacketResponse {
+  data: UInt8Array;
+  timestamp: number;
+  aid: number;
+};
+
+interface WebMelonMPController {
+  initialize: () => void;
+  end: () => void;
+  sendPacket: (data: UInt8Array, timestamp: number) => void;
+  recvPacket: () => WebMelonRecvPacketResponse?;
+  sendCmd: (data: UInt8Array, timestamp: number) => void;
+  sendReply:(data: UInt8Array, timestamp: number, aid: number) => void;
+  sendAck: (data: Uint8Array, timestamp: number) => void;
+  recvHostPacket: () => WebMelonRecvPacketResponse?;
+  recvReplies: (timestamp: number, aidmask: number) => WebMelonRecvReplyPacketResponse[];
+};
+
 interface WebMelonCart {
   createCart: () => void;
   loadFileIntoCart: (filename: string) => boolean;
@@ -92,6 +115,11 @@ interface WebMelonInput {
   setRumbleEnabled: (enabled: boolean) => void;
 };
 
+interface WebMelonMultiplayer {
+  setInterface: (interface: WebMelonMPController) => void;
+  removeInterface: () => void;
+};
+
 interface WebMelonInterface {
   cart: WebMelonCart;
   constants: WebMelonConstants;
@@ -99,6 +127,7 @@ interface WebMelonInterface {
   emulator: WebMelonEmulator;
   firmware: WebMelonFirmware;
   input: WebMelonInput;
+  multiplayer: WebMelonMultiplayer;
 };
 
 interface Window {
