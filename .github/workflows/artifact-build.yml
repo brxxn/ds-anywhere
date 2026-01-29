@@ -22,7 +22,7 @@ jobs:
           key: emsdk-cache
           path: action-runner/emsdk-cache
       - name: Load emsdk
-        uses: mymindstorm/setup-emsdk@v14
+        uses: openinfer/setup-emsdk@add1857f6f5c63be34f63d2db48e2db6c8579e2b
         with:
           version: 4.0.23
           actions-cache-folder: 'action-runner/emsdk-cache'
