@@ -22,9 +22,9 @@ jobs:
           key: emsdk-cache
           path: action-runner/emsdk-cache
       - name: Load emsdk
-        uses: mymindstorm/setup-emsdk@v14
+        uses: openinfer/setup-emsdk@add1857f6f5c63be34f63d2db48e2db6c8579e2b
         with:
-          version: latest
+          version: 4.0.0
           actions-cache-folder: 'action-runner/emsdk-cache'
       - name: Save emsdk cache
         uses: actions/cache/save@v4
@@ -65,4 +65,22 @@ jobs:
       - name: Deploy frontend artifact to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-      
+  
+  cf-deploy:
+    environment: cloudflare-pages
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/head/release'
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: frontend
+          path: frontend/
+      - name: Deploy frontend artifact to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/ --project-name=ds-anywhere
+
