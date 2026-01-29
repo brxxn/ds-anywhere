@@ -24,7 +24,7 @@ jobs:
       - name: Load emsdk
         uses: openinfer/setup-emsdk@add1857f6f5c63be34f63d2db48e2db6c8579e2b
         with:
-          version: 4.0.23
+          version: 4.0.0
           actions-cache-folder: 'action-runner/emsdk-cache'
       - name: Save emsdk cache
         uses: actions/cache/save@v4
