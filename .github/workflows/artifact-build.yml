@@ -24,7 +24,7 @@ jobs:
       - name: Load emsdk
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: latest
+          version: 4.0.23
           actions-cache-folder: 'action-runner/emsdk-cache'
       - name: Save emsdk cache
         uses: actions/cache/save@v4
