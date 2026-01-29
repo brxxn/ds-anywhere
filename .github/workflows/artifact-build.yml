@@ -65,4 +65,21 @@ jobs:
       - name: Deploy frontend artifact to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-      
+  
+  cf-deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/head/release'
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: frontend
+          path: frontend/
+      - name: Deploy frontend artifact to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/ --project-name=ds-anywhere
+
