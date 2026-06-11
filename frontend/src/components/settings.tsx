@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import './settings.css';
-import { LuUser } from "react-icons/lu";
+import { LuSave, LuUser } from "react-icons/lu";
 import { IoGameControllerOutline, IoHardwareChipOutline } from "react-icons/io5";
 import { FaRegKeyboard } from "react-icons/fa";
 import { FC, ReactNode } from "preact/compat";
@@ -8,6 +8,7 @@ import InputSettingsMenu from "./settings-menus/input";
 import ControlsSettingsMenu from "./settings-menus/controls";
 import PersonalizationSettingsMenu from "./settings-menus/personalization";
 import FirmwareSettingsMenu from "./settings-menus/firmware";
+import SaveDataSettingsMenu from "./settings-menus/savedata";
 
 interface SettingsModalProps {
   showing: boolean;
@@ -40,6 +41,11 @@ const settingsMenus: {[key: string]: SettingsMenuItem} = {
     displayName: 'Firmware',
     icon: (<IoHardwareChipOutline />),
     component: FirmwareSettingsMenu
+  },
+  savedata: {
+    displayName: 'Save Data',
+    icon: (<LuSave />),
+    component: SaveDataSettingsMenu
   }
 };
 

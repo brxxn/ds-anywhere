@@ -28,13 +28,22 @@ interface WebMelonCart {
   getUnloadedCartCode: () => string;
 };
 
+interface WebMelonStorageFileEntry {
+  name: string;
+  size: number;
+};
+
 interface WebMelonStorage {
   createDirectory: (path: string) => void;
   mountIndexedDB: (path: string) => void;
   onPrepare: (callback: () => any) => void;
   onSaveInitiate: (callback: () => any) => void;
   onSaveComplete: (callback: () => any) => void;
+  initializeSavefilesDirectory: (callback?: (err: any) => void) => void;
   prepareVirtualFilesystem: () => void;
+  listFiles: (path: string) => WebMelonStorageFileEntry[];
+  read: (path: string) => Uint8Array;
+  deleteFile: (path: string) => void;
   sync: () => void;
   write: (path: string, data: Uint8Array) => void;
 };

@@ -45,6 +45,69 @@
     };
   };
 
+  // Runs on the real-time audio rendering thread. Keeps a small ring buffer of samples fed from the
+  // main thread; when the buffer overflows we drop the oldest samples so audio latency stays bounded
+  // instead of accumulating behind playback.
+  const AudioWorkletSource = `
+    class WebMelonAudioProcessor extends AudioWorkletProcessor {
+      constructor() {
+        super();
+        this.cap = 8192;
+        // Steady-state buffer level we aim for (~62ms). Staying mid-range keeps normal timing
+        // jitter from ever touching the empty/full boundaries, which is what causes audible
+        // crackle (dropped samples) or gaps (silence padding).
+        this.target = 2048;
+        this.left = new Float32Array(this.cap);
+        this.right = new Float32Array(this.cap);
+        this.head = 0;
+        this.len = 0;
+        this.started = false;
+        this.port.onmessage = (event) => {
+          const { left, right } = event.data;
+          for (let i = 0; i < left.length && this.len < this.cap; i++) {
+            const j = (this.head + this.len) % this.cap;
+            this.left[j] = left[i];
+            this.right[j] = right[i];
+            this.len++;
+          }
+          // If the producer ran far ahead (fast-forward, or frames queued while the context
+          // was suspended), trim back to the target in one cut. A single rare skip is far
+          // less audible than continuously dropping samples at the full boundary.
+          if (this.len >= this.cap) {
+            this.head = (this.head + (this.len - this.target)) % this.cap;
+            this.len = this.target;
+          }
+        };
+      }
+
+      process(inputs, outputs) {
+        const leftChannel = outputs[0][0];
+        const rightChannel = outputs[0][1];
+        if (!this.started) {
+          // Pre-buffer up to the target before emitting anything so we have cushion against
+          // producer jitter; until then the output stays silent.
+          if (this.len < this.target) return true;
+          this.started = true;
+        }
+        for (let i = 0; i < leftChannel.length; i++) {
+          if (this.len === 0) {
+            // Underrun: stop and re-buffer to the target rather than emitting ragged
+            // partial quanta every callback.
+            this.started = false;
+            break;
+          }
+          leftChannel[i] = this.left[this.head];
+          rightChannel[i] = this.right[this.head];
+          this.head = (this.head + 1) % this.cap;
+          this.len--;
+        }
+        return true;
+      }
+    }
+    registerProcessor('webmelon-audio-processor', WebMelonAudioProcessor);
+  `;
+  let audioWorkletUrl = null;
+
   let emulatorFrameRunning = false;
   const DsButtonInput = {
     A: (1 << 0),
@@ -111,6 +174,9 @@
         latencyHint: 'interactive',
         sampleRate: 32823
       }),
+      emulatorAudioNode: null,
+      // Only used by the deprecated ScriptProcessor fallback path when AudioWorklet is unavailable
+      // (e.g. non-secure contexts).
       emulatorAudioQueue: {
         left: new Int16Array(8192),
         right: new Int16Array(8192),
@@ -157,6 +223,7 @@
             clearInterval(WebMelon._internal.emulatorFrameInterval);
           }
           WebMelon._internal.emulatorAudioCtx.close();
+          WebMelon._internal.emulatorAudioNode = null;
           WebMelon._internal.emulatorAudioCtx = new AudioContext({
             latencyHint: 'interactive',
             sampleRate: 32823
@@ -270,20 +337,38 @@
 
         for (let i = 0; i < leftChannel.length && queue.fifo.len !== 0; ++i) {
           queue.fifo.len--;
-          leftChannel[i] = queue.left[queue.fifo.head] / WebMelon.constants.DS_OUTPUT_AUDIO_SAMPLE_RATE;
-          rightChannel[i] = queue.right[queue.fifo.head] / WebMelon.constants.DS_OUTPUT_AUDIO_SAMPLE_RATE;
+          leftChannel[i] = queue.left[queue.fifo.head] / 32768;
+          rightChannel[i] = queue.right[queue.fifo.head] / 32768;
           queue.fifo.head = (queue.fifo.head + 1) % queue.fifo.cap;
         }
       },
-      createAudioProcessor: () => {
-        // TODO: maybe migrate away from createScriptProcessor since it's deprecated?
-        // The alternative is to make an AudioWorklet, but I don't know if having a worker run audio would
-        // be great for this program.
-        const audioSource = WebMelon._internal.emulatorAudioCtx.createBufferSource();
-        const audioProcessor = WebMelon._internal.emulatorAudioCtx.createScriptProcessor(4096, 0, 2);
+      createAudioProcessor: async () => {
+        const audioCtx = WebMelon._internal.emulatorAudioCtx;
+        if (audioCtx.audioWorklet) {
+          // The worklet runs on the dedicated audio rendering thread, so playback is not delayed by
+          // emulation work happening on the main thread.
+          if (!audioWorkletUrl) {
+            audioWorkletUrl = URL.createObjectURL(
+              new Blob([AudioWorkletSource], { type: 'application/javascript' })
+            );
+          }
+          await audioCtx.audioWorklet.addModule(audioWorkletUrl);
+          const audioNode = new AudioWorkletNode(audioCtx, 'webmelon-audio-processor', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [2]
+          });
+          audioNode.connect(audioCtx.destination);
+          WebMelon._internal.emulatorAudioNode = audioNode;
+          return;
+        }
+        // Fallback for contexts without AudioWorklet support (e.g. non-secure origins).
+        // createScriptProcessor is deprecated and adds noticeable latency.
+        const audioSource = audioCtx.createBufferSource();
+        const audioProcessor = audioCtx.createScriptProcessor(4096, 0, 2);
         audioProcessor.addEventListener('audioprocess', WebMelon.audio.processAudio);
         audioSource.connect(audioProcessor);
-        audioProcessor.connect(WebMelon._internal.emulatorAudioCtx.destination);
+        audioProcessor.connect(audioCtx.destination);
         audioSource.start();
       }
     },
@@ -352,18 +437,40 @@
           }
         });
       },
+      initializeSavefilesDirectory: (callback) => {
+        if (FS.analyzePath('/savefiles').exists) {
+          if (callback) callback(null);
+          return;
+        }
+        WebMelon.storage.createDirectory('/savefiles');
+        WebMelon.storage.mountIndexedDB('/savefiles');
+        FS.syncfs(true, (err) => {
+          console.debug('synced fs', err);
+          if (callback) callback(err);
+        });
+      },
       prepareVirtualFilesystem: () => {
         WebMelon.storage.initializeFirmwareDirectory();
-        if (!FS.analyzePath('/savefiles').exists) {
-          WebMelon.storage.createDirectory('/savefiles');
-          WebMelon.storage.mountIndexedDB('/savefiles');
-          FS.syncfs(true, (err) => {
-            console.debug('synced fs', err);
-            callAllSubscribers(WebMelon._internal.subscribers.vfsInitialized);
-          });
-        } else {
+        WebMelon.storage.initializeSavefilesDirectory(() => {
           callAllSubscribers(WebMelon._internal.subscribers.vfsInitialized);
-        }
+        });
+      },
+      listFiles: (path) => {
+        if (!FS.analyzePath(path).exists) return [];
+        return FS.readdir(path)
+          .filter((name) => name !== '.' && name !== '..')
+          .filter((name) => !FS.isDir(FS.stat(path + '/' + name).mode))
+          .map((name) => ({
+            name: name,
+            size: FS.stat(path + '/' + name).size
+          }));
+      },
+      read: (path) => {
+        return FS.readFile(path);
+      },
+      deleteFile: (path) => {
+        if (!FS.analyzePath(path).exists) return;
+        FS.unlink(path);
       },
       sync: () => {
         FS.syncfs(false, (err) => {
@@ -451,13 +558,35 @@
             bottomCtx.putImageData(bottomDataImage, 0, 0);
 
             if (audioSamples !== 0) {
-              for (let i = 0; i < audioSamples; i++) {
-                if (audioQueue.fifo.len >= audioQueue.fifo.cap) break;
-                let j = (audioQueue.fifo.head + audioQueue.fifo.len) % audioQueue.fifo.cap;
-                audioQueue.left[j] = spuOutputArray[i * 2];
-                audioQueue.right[j] = spuOutputArray[i * 2 + 1];
-                audioQueue.fifo.len++;
+              const audioNode = WebMelon._internal.emulatorAudioNode;
+              if (audioNode) {
+                // Don't feed the worklet while the context is suspended (e.g. before the first
+                // user gesture) — the messages would pile up in the port and arrive all at once
+                // on resume.
+                if (WebMelon._internal.emulatorAudioCtx.state === 'running') {
+                  let left = new Float32Array(audioSamples);
+                  let right = new Float32Array(audioSamples);
+                  for (let i = 0; i < audioSamples; i++) {
+                    left[i] = spuOutputArray[i * 2] / 32768;
+                    right[i] = spuOutputArray[i * 2 + 1] / 32768;
+                  }
+                  audioNode.port.postMessage({ left, right }, [left.buffer, right.buffer]);
+                }
+              } else if (!WebMelon._internal.emulatorAudioCtx.audioWorklet) {
+                // ScriptProcessor fallback path: feed the FIFO drained by processAudio(). Drop the
+                // oldest samples on overflow so latency stays bounded rather than pinned at the cap.
+                for (let i = 0; i < audioSamples; i++) {
+                  if (audioQueue.fifo.len >= audioQueue.fifo.cap) {
+                    audioQueue.fifo.head = (audioQueue.fifo.head + 1) % audioQueue.fifo.cap;
+                    audioQueue.fifo.len--;
+                  }
+                  let j = (audioQueue.fifo.head + audioQueue.fifo.len) % audioQueue.fifo.cap;
+                  audioQueue.left[j] = spuOutputArray[i * 2];
+                  audioQueue.right[j] = spuOutputArray[i * 2 + 1];
+                  audioQueue.fifo.len++;
+                }
               }
+              // If the worklet module is still loading (audioNode not yet created), drop the samples.
             }
             if (WebMelon._internal.emulatorAudioCtx.state !== 'running') {
               WebMelon._internal.emulatorAudioCtx.resume();
