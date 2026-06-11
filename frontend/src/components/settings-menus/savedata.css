@@ -1,0 +1,29 @@
+.savedata-container {
+  padding: 5px;
+}
+
+#savedata-file-input {
+  display: none;
+}
+
+.savedata-input-container {
+  text-align: center;
+  align-items: center;
+  border: 1px dashed;
+  border-radius: 16px;
+  padding-top: 5vh;
+  padding-bottom: 5vh;
+  padding-left: 10px;
+  padding-right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  justify-content: center;
+  border-color: lightgray;
+}
+
+.savedata-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

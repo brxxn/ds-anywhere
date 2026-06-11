@@ -437,18 +437,40 @@
           }
         });
       },
+      initializeSavefilesDirectory: (callback) => {
+        if (FS.analyzePath('/savefiles').exists) {
+          if (callback) callback(null);
+          return;
+        }
+        WebMelon.storage.createDirectory('/savefiles');
+        WebMelon.storage.mountIndexedDB('/savefiles');
+        FS.syncfs(true, (err) => {
+          console.debug('synced fs', err);
+          if (callback) callback(err);
+        });
+      },
       prepareVirtualFilesystem: () => {
         WebMelon.storage.initializeFirmwareDirectory();
-        if (!FS.analyzePath('/savefiles').exists) {
-          WebMelon.storage.createDirectory('/savefiles');
-          WebMelon.storage.mountIndexedDB('/savefiles');
-          FS.syncfs(true, (err) => {
-            console.debug('synced fs', err);
-            callAllSubscribers(WebMelon._internal.subscribers.vfsInitialized);
-          });
-        } else {
+        WebMelon.storage.initializeSavefilesDirectory(() => {
           callAllSubscribers(WebMelon._internal.subscribers.vfsInitialized);
-        }
+        });
+      },
+      listFiles: (path) => {
+        if (!FS.analyzePath(path).exists) return [];
+        return FS.readdir(path)
+          .filter((name) => name !== '.' && name !== '..')
+          .filter((name) => !FS.isDir(FS.stat(path + '/' + name).mode))
+          .map((name) => ({
+            name: name,
+            size: FS.stat(path + '/' + name).size
+          }));
+      },
+      read: (path) => {
+        return FS.readFile(path);
+      },
+      deleteFile: (path) => {
+        if (!FS.analyzePath(path).exists) return;
+        FS.unlink(path);
       },
       sync: () => {
         FS.syncfs(false, (err) => {
